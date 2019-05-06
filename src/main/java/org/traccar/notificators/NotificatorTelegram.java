@@ -21,19 +21,26 @@ import org.slf4j.LoggerFactory;
 import org.traccar.Context;
 import org.traccar.model.Event;
 import org.traccar.model.Position;
+import org.traccar.model.User;
 import org.traccar.notification.NotificationFormatter;
 
+import javax.json.JsonObject;
 import javax.ws.rs.client.Entity;
 import javax.ws.rs.client.InvocationCallback;
 
 public class NotificatorTelegram extends Notificator {
-
+    private static final String TELEGRAM_API_PREFIX = "https://api.telegram.org/bot%s/%s";
     private static final Logger LOGGER = LoggerFactory.getLogger(NotificatorTelegram.class);
 
-    private String url;
+    private String sendMessageUrl;
+    private String sendContactUrl;
     private String chatId;
 
-    public static class Message {
+    public static class TextMessage {
+        public TextMessage(String chatId, String text) {
+            this.chatId = chatId;
+            this.text = text;
+        }
         @JsonProperty("chat_id")
         private String chatId;
         @JsonProperty("text")
@@ -42,21 +49,31 @@ public class NotificatorTelegram extends Notificator {
         private String parseMode = "html";
     }
 
+    public static class ContactMessage {
+        public ContactMessage(String chatId, String phoneNumber) {
+            this.chatId = chatId;
+            this.phoneNumber = phoneNumber;
+        }
+        @JsonProperty("chat_id")
+        private String chatId;
+        @JsonProperty("phone_number")
+        private String phoneNumber;
+        @JsonProperty("first_name")
+        private String firstName = "dummy";
+    }
+
     public NotificatorTelegram() {
-        url = String.format(
-                "https://api.telegram.org/bot%s/sendMessage",
-                Context.getConfig().getString("notificator.telegram.key"));
+        String botKey = Context.getConfig().getString("notificator.telegram.key");
+        sendMessageUrl = String.format(TELEGRAM_API_PREFIX, botKey, "sendMessage");
+        sendContactUrl = String.format(TELEGRAM_API_PREFIX, botKey, "sendContact");
         chatId = Context.getConfig().getString("notificator.telegram.chatId");
     }
 
-    @Override
-    public void sendSync(long userId, Event event, Position position) {
+    private void sendTextMessage(long userId, Event event, Position position, String userChatId) {
+        TextMessage message = new TextMessage(
+                userChatId, NotificationFormatter.formatShortMessage(userId, event, position));
 
-        Message message = new Message();
-        message.chatId = chatId;
-        message.text = NotificationFormatter.formatShortMessage(userId, event, position);
-
-        Context.getClient().target(url).request()
+        Context.getClient().target(sendMessageUrl).request()
                 .async().post(Entity.json(message), new InvocationCallback<Object>() {
             @Override
             public void completed(Object o) {
@@ -64,9 +81,40 @@ public class NotificatorTelegram extends Notificator {
 
             @Override
             public void failed(Throwable throwable) {
-                LOGGER.warn("Telegram API error", throwable);
+                LOGGER.warn("Telegram API error - send message failed", throwable);
             }
         });
+    }
+
+    @Override
+    public void sendSync(long userId, Event event, Position position) {
+
+        final User user = Context.getPermissionsManager().getUser(userId);
+        if (user.getPhone() != null) {
+            LOGGER.info(">>>>> User " + user.getName() + " phone is " + user.getPhone());
+            ContactMessage message = new ContactMessage(chatId, user.getPhone());
+            Context.getClient().target(sendContactUrl).request()
+                    .async().post(Entity.json(message), new InvocationCallback<JsonObject>() {
+                @Override
+                public void completed(JsonObject json) {
+                    JsonObject result = json.getJsonObject("result");
+                    if (json.getBoolean("ok")) {
+                        JsonObject contact = result.getJsonObject("contact");
+                        String userChatId = contact.getJsonNumber("user_id").toString();
+                        sendTextMessage(userId, event, position, userChatId);
+                    } else {
+                        LOGGER.warn("Telegram notificator: contact retrieval failed");
+                    }
+                }
+
+                @Override
+                public void failed(Throwable throwable) {
+                    LOGGER.warn("Telegram API error - user " + user.getName() + "chatId retrieval failed", throwable);
+                }
+            });
+        } else {
+            LOGGER.warn("Telegram notificator: Couldn't find phone number for user " + user.getName());
+        }
     }
 
     @Override
