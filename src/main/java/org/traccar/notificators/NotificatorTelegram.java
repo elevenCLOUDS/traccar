@@ -27,6 +27,7 @@ import org.traccar.notification.NotificationFormatter;
 import javax.json.JsonObject;
 import javax.ws.rs.client.Entity;
 import javax.ws.rs.client.InvocationCallback;
+import java.util.HashMap;
 
 public class NotificatorTelegram extends Notificator {
     private static final String TELEGRAM_API_PREFIX = "https://api.telegram.org/bot%s/%s";
@@ -35,6 +36,7 @@ public class NotificatorTelegram extends Notificator {
     private String sendMessageUrl;
     private String sendContactUrl;
     private String chatId;
+    private TelegramCache cache = new TelegramCache();
 
     public static class TextMessage {
         public TextMessage(String chatId, String text) {
@@ -60,6 +62,42 @@ public class NotificatorTelegram extends Notificator {
         private String phoneNumber;
         @JsonProperty("first_name")
         private String firstName = "dummy";
+    }
+
+    public static class TelegramCache {
+        private class CachePayload {
+            CachePayload(String chatId) {
+                this.chatId = chatId;
+                timestamp = System.currentTimeMillis();
+            }
+            private String chatId;
+            private long timestamp;
+        }
+
+        private HashMap<String, CachePayload> cache = new HashMap<>();
+        private long retention;
+
+        public TelegramCache() {
+            retention = Context.getConfig().getLong("notificator.telegram.cacheRetention", 0) * 1000;
+        }
+
+        private Boolean isValid(long timestamp) {
+            long currTime = System.currentTimeMillis();
+            Boolean ret = (currTime - timestamp) <= retention;
+            return ret;
+        }
+
+        public String getChatId(String phoneNumber) {
+            CachePayload payload = cache.get(phoneNumber);
+            if (payload != null && isValid(payload.timestamp)) {
+                return payload.chatId;
+            }
+            return null;
+        }
+
+        public void storeCache(String phoneNumber, String chatId) {
+            cache.put(phoneNumber, new CachePayload(chatId));
+        }
     }
 
     public NotificatorTelegram() {
@@ -91,27 +129,34 @@ public class NotificatorTelegram extends Notificator {
 
         final User user = Context.getPermissionsManager().getUser(userId);
         if (user.getPhone() != null) {
-            LOGGER.info(">>>>> User " + user.getName() + " phone is " + user.getPhone());
-            ContactMessage message = new ContactMessage(chatId, user.getPhone());
-            Context.getClient().target(sendContactUrl).request()
-                    .async().post(Entity.json(message), new InvocationCallback<JsonObject>() {
-                @Override
-                public void completed(JsonObject json) {
-                    JsonObject result = json.getJsonObject("result");
-                    if (json.getBoolean("ok")) {
-                        JsonObject contact = result.getJsonObject("contact");
-                        String userChatId = contact.getJsonNumber("user_id").toString();
-                        sendTextMessage(userId, event, position, userChatId);
-                    } else {
-                        LOGGER.warn("Telegram notificator: contact retrieval failed");
-                    }
-                }
+            String userChatId = cache.getChatId(user.getPhone());
+            if (userChatId != null) {
+                sendTextMessage(userId, event, position, userChatId);
+            } else {
+                ContactMessage message = new ContactMessage(chatId, user.getPhone());
+                Context.getClient().target(sendContactUrl).request()
+                        .async().post(Entity.json(message), new InvocationCallback<JsonObject>() {
+                    @Override
+                    public void completed(JsonObject json) {
+                        JsonObject result = json.getJsonObject("result");
+                        if (json.getBoolean("ok")) {
+                            JsonObject contact = result.getJsonObject("contact");
+                            String userChatId = contact.getJsonNumber("user_id").toString();
 
-                @Override
-                public void failed(Throwable throwable) {
-                    LOGGER.warn("Telegram API error - user " + user.getName() + "chatId retrieval failed", throwable);
-                }
-            });
+                            cache.storeCache(user.getPhone(), userChatId);
+                            sendTextMessage(userId, event, position, userChatId);
+                        } else {
+                            LOGGER.warn("Telegram notificator: contact retrieval failed");
+                        }
+                    }
+
+                    @Override
+                    public void failed(Throwable throwable) {
+                        LOGGER.warn("Telegram API error - user " + user.getName() + "chatId retrieval failed",
+                                throwable);
+                    }
+                });
+            }
         } else {
             LOGGER.warn("Telegram notificator: Couldn't find phone number for user " + user.getName());
         }
@@ -121,5 +166,4 @@ public class NotificatorTelegram extends Notificator {
     public void sendAsync(long userId, Event event, Position position) {
         sendSync(userId, event, position);
     }
-
 }
