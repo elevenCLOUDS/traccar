@@ -31,6 +31,7 @@ import java.util.HashMap;
 
 public class NotificatorTelegram extends Notificator {
     private static final String TELEGRAM_API_PREFIX = "https://api.telegram.org/bot%s/%s";
+    private static final long HOUR_TIME_FACTOR = 1000 * 60 * 60; // mSec to hour factor
     private static final Logger LOGGER = LoggerFactory.getLogger(NotificatorTelegram.class);
 
     private String sendMessageUrl;
@@ -78,13 +79,12 @@ public class NotificatorTelegram extends Notificator {
         private long retention;
 
         public TelegramCache() {
-            retention = Context.getConfig().getLong("notificator.telegram.cacheRetention", 0) * 1000;
+            retention = Context.getConfig().getLong("notificator.telegram.cacheRetention", 0) * HOUR_TIME_FACTOR;
         }
 
         private Boolean isValid(long timestamp) {
             long currTime = System.currentTimeMillis();
-            Boolean ret = (currTime - timestamp) <= retention;
-            return ret;
+            return retention < 0 || ((currTime - timestamp) <= retention);
         }
 
         public String getChatId(String phoneNumber) {
