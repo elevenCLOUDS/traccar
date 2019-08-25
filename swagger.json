@@ -2,9 +2,9 @@
     "swagger": "2.0",
     "info": {
         "version": "4.6",
-        "title": "traccar"
+        "title": "gpstrack"
     },
-    "host": "demo.traccar.org",
+    "host": "gpstrack.com.ng",
     "basePath": "/api",
     "schemes": [
         "http"
