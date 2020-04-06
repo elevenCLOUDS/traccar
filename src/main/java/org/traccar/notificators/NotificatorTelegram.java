@@ -128,8 +128,14 @@ public class NotificatorTelegram extends Notificator {
     public void sendSync(long userId, Event event, Position position) {
 
         final User user = Context.getPermissionsManager().getUser(userId);
-        if (user.getPhone() != null) {
-            String userChatId = cache.getChatId(user.getPhone());
+        Boolean checkTelegramId = user.getAttributes().containsKey("notificationTelegramChatId");
+        if (user.getPhone() != null || checkTelegramId) {
+            String userChatId;
+            if (checkTelegramId) {
+                userChatId = user.getString("notificationTelegramChatId");
+            } else {
+                userChatId = cache.getChatId(user.getPhone());
+            }
             if (userChatId != null) {
                 sendTextMessage(userId, event, position, userChatId);
             } else {
@@ -158,7 +164,7 @@ public class NotificatorTelegram extends Notificator {
                 });
             }
         } else {
-            LOGGER.warn("Telegram notificator: Couldn't find phone number for user " + user.getName());
+            LOGGER.warn("Telegram notificator: Couldn't find phone number for user " + user.getName() + " - " + user.getPhone());
         }
     }
 
