@@ -62,7 +62,7 @@ public class NotificatorTelegram extends Notificator {
         @JsonProperty("phone_number")
         private String phoneNumber;
         @JsonProperty("first_name")
-        private String firstName = "dummy";
+        private String firstName = "Query User";
     }
 
     public static class TelegramCache {
