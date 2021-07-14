@@ -9,8 +9,8 @@ public class TeltonikaProtocolEncoderTest extends ProtocolTest {
     @Test
     public void testEncode() throws Exception {
 
-        TeltonikaProtocolEncoder encoder = new TeltonikaProtocolEncoder();
-        
+        var encoder = new TeltonikaProtocolEncoder(null);
+
         Command command = new Command();
         command.setDeviceId(1);
         command.setType(Command.TYPE_CUSTOM);

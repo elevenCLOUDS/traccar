@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 - 2018 Anton Tananaev (anton@traccar.org)
+ * Copyright 2015 - 2020 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,7 +57,7 @@ public class WatchProtocolDecoder extends BaseProtocolDecoder {
             .expression("([EW])?,")
             .number("(d+.?d*),")                 // speed
             .number("(d+.?d*),")                 // course
-            .number("(d+.?d*),")                 // altitude
+            .number("(-?d+.?d*),")               // altitude
             .number("(d+),")                     // satellites
             .number("(d+),")                     // rssi
             .number("(d+),")                     // battery
@@ -101,7 +101,7 @@ public class WatchProtocolDecoder extends BaseProtocolDecoder {
             return Position.ALARM_GEOFENCE_ENTER;
         } else if (BitUtil.check(status, 20)) {
             return Position.ALARM_REMOVING;
-        } else if (BitUtil.check(status, 21)) {
+        } else if (BitUtil.check(status, 21) || BitUtil.check(status, 22)) {
             return Position.ALARM_FALL_DOWN;
         }
         return null;
@@ -244,13 +244,13 @@ public class WatchProtocolDecoder extends BaseProtocolDecoder {
                     getLastLocation(position, null);
 
                     position.set(Position.KEY_BATTERY_LEVEL, Integer.parseInt(values[2]));
+                    position.set(Position.KEY_STEPS, Integer.parseInt(values[0]));
 
                     return position;
                 }
             }
 
-        } else if (type.equals("UD") || type.equals("UD2") || type.equals("UD3")
-                || type.equals("AL") || type.equals("WT")) {
+        } else if (type.startsWith("UD") || type.startsWith("AL") || type.startsWith("WT")) {
 
             Position position = decodePosition(deviceSession, buf.toString(StandardCharsets.US_ASCII));
 
@@ -263,11 +263,14 @@ public class WatchProtocolDecoder extends BaseProtocolDecoder {
 
             return position;
 
-        } else if (type.equals("TKQ")) {
+        } else if (type.equals("TKQ") || type.equals("TKQ2")) {
 
-            sendResponse(channel, id, index, "TKQ");
+            sendResponse(channel, id, index, type);
 
-        } else if (type.equals("PULSE") || type.equals("heart") || type.equals("bphrt")) {
+        } else if (type.equalsIgnoreCase("PULSE")
+                || type.equalsIgnoreCase("HEART")
+                || type.equalsIgnoreCase("BLOOD")
+                || type.equalsIgnoreCase("BPHRT")) {
 
             if (buf.isReadable()) {
 
@@ -279,11 +282,14 @@ public class WatchProtocolDecoder extends BaseProtocolDecoder {
                 String[] values = buf.toString(StandardCharsets.US_ASCII).split(",");
                 int valueIndex = 0;
 
-                if (type.equals("bphrt")) {
+                if (type.equalsIgnoreCase("BPHRT") || type.equalsIgnoreCase("BLOOD")) {
                     position.set("pressureHigh", values[valueIndex++]);
                     position.set("pressureLow", values[valueIndex++]);
                 }
-                position.set(Position.KEY_HEART_RATE, Integer.parseInt(values[valueIndex]));
+
+                if (valueIndex <= values.length - 1) {
+                    position.set(Position.KEY_HEART_RATE, Integer.parseInt(values[valueIndex]));
+                }
 
                 return position;
 

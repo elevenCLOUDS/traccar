@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Anton Tananaev (anton@traccar.org)
+ * Copyright 2018 - 2020 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,21 +38,19 @@ public abstract class WindowsService {
 
     private final Object waitObject = new Object();
 
-    private String serviceName;
-    private ServiceMain serviceMain;
-    private ServiceControl serviceControl;
+    private final String serviceName;
     private SERVICE_STATUS_HANDLE serviceStatusHandle;
 
     public WindowsService(String serviceName) {
         this.serviceName = serviceName;
     }
 
-    public boolean install(
+    public void install(
             String displayName, String description, String[] dependencies,
             String account, String password, String config) throws URISyntaxException {
 
         String javaHome = System.getProperty("java.home");
-        String javaBinary = javaHome + "\\bin\\java.exe";
+        String javaBinary = "\"" + javaHome + "\\bin\\java.exe\"";
 
         File jar = new File(WindowsService.class.getProtectionDomain().getCodeSource().getLocation().toURI());
         String command = javaBinary
@@ -60,7 +58,6 @@ public abstract class WindowsService {
                 + " -jar \"" + jar.getAbsolutePath() + "\""
                 + " --service \"" + config + "\"";
 
-        boolean success = false;
         StringBuilder dep = new StringBuilder();
 
         if (dependencies != null) {
@@ -84,29 +81,25 @@ public abstract class WindowsService {
                     null, null, dep.toString(), account, password);
 
             if (service != null) {
-                success = ADVAPI_32.ChangeServiceConfig2(service, Winsvc.SERVICE_CONFIG_DESCRIPTION, desc);
+                ADVAPI_32.ChangeServiceConfig2(service, Winsvc.SERVICE_CONFIG_DESCRIPTION, desc);
                 ADVAPI_32.CloseServiceHandle(service);
             }
             ADVAPI_32.CloseServiceHandle(serviceManager);
         }
-        return success;
     }
 
-    public boolean uninstall() {
-        boolean success = false;
-
+    public void uninstall() {
         SC_HANDLE serviceManager = openServiceControlManager(null, Winsvc.SC_MANAGER_ALL_ACCESS);
 
         if (serviceManager != null) {
             SC_HANDLE service = ADVAPI_32.OpenService(serviceManager, serviceName, Winsvc.SERVICE_ALL_ACCESS);
 
             if (service != null) {
-                success = ADVAPI_32.DeleteService(service);
+                ADVAPI_32.DeleteService(service);
                 ADVAPI_32.CloseServiceHandle(service);
             }
             ADVAPI_32.CloseServiceHandle(serviceManager);
         }
-        return success;
     }
 
     public boolean start() {
@@ -152,7 +145,7 @@ public abstract class WindowsService {
 
         POSIXFactory.getPOSIX().chdir(path);
 
-        serviceMain = new ServiceMain();
+        ServiceMain serviceMain = new ServiceMain();
         SERVICE_TABLE_ENTRY entry = new SERVICE_TABLE_ENTRY();
         entry.lpServiceName = serviceName;
         entry.lpServiceProc = serviceMain;
@@ -180,7 +173,7 @@ public abstract class WindowsService {
     private class ServiceMain implements SERVICE_MAIN_FUNCTION {
 
         public void callback(int dwArgc, Pointer lpszArgv) {
-            serviceControl = new ServiceControl();
+            ServiceControl serviceControl = new ServiceControl();
             serviceStatusHandle = ADVAPI_32.RegisterServiceCtrlHandlerEx(serviceName, serviceControl, null);
 
             reportStatus(Winsvc.SERVICE_START_PENDING, WinError.NO_ERROR, 3000);
@@ -194,7 +187,8 @@ public abstract class WindowsService {
                 synchronized (waitObject) {
                     waitObject.wait();
                 }
-            } catch (InterruptedException ex) {
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
 
             reportStatus(Winsvc.SERVICE_STOPPED, WinError.NO_ERROR, 0);

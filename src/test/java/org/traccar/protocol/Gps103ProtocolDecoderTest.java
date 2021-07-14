@@ -9,7 +9,13 @@ public class Gps103ProtocolDecoderTest extends ProtocolTest {
     @Test
     public void testDecode() throws Exception {
 
-        Gps103ProtocolDecoder decoder = new Gps103ProtocolDecoder(null);
+        var decoder = new Gps103ProtocolDecoder(null);
+
+        verifyPosition(decoder, text(
+                "imei:864035050002451,tracker,201223064947,,F,064947,A,1935.70640,N,09859.94436,W,0.025,;"));
+
+        verifyPosition(decoder, text(
+                "imei:760112011448012,001,2001151918,,F,191833.000,A,6136.6174,N,2126.9901,E,0.00,202.6,-0.1,1,,,,20;"));
 
         verifyAttribute(decoder, text(
                 "imei:868683023212255,tracker,190205084503,,F,064459.000,A,4915.1221,N,01634.5655,E,3.91,83.95;"),

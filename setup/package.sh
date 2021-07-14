@@ -64,7 +64,7 @@ if [ $PLATFORM != "other" ]; then
 fi
 if [ $PLATFORM = "all" -o $PLATFORM = "windows-64" ]; then
   check_requirement "Inno Extractor" "which innoextract" "Missing innoextract binary"
-  check_requirement "Inno Setup" "ls innosetup-*.exe" "Missing Inno Setup (http://www.jrsoftware.org/isdl.php)"
+  check_requirement "Inno Setup" "ls i*setup-*.exe" "Missing Inno Setup (http://www.jrsoftware.org/isdl.php)"
   check_requirement "Windows 64 Java" "ls java-*.windows.ojdkbuild.x86_64.zip" "Missing Windows 64 Java (https://github.com/ojdkbuild/ojdkbuild)"
   check_requirement "Wine" "which wine" "Missing wine binary"
 fi
@@ -100,7 +100,7 @@ prepare () {
   cp traccar.xml out/conf
 
   if [ $PLATFORM = "all" -o $PLATFORM = "windows-64" ]; then
-	innoextract innosetup-*.exe >/dev/null
+	innoextract i*setup-*.exe >/dev/null
 	info "If you got any errors here try Inno Setup version 5.5.5 (or check supported versions using 'innoextract -v')"
   fi
 }
@@ -129,7 +129,7 @@ package_other () {
 package_windows () {
   info "Building Windows 64 installer"
   unzip -q -o java-*.windows.ojdkbuild.x86_64.zip
-  jlink --module-path java-*.windows.ojdkbuild.x86_64/jmods --add-modules java.se,jdk.charsets --output out/jre
+  jlink --module-path java-*.windows.ojdkbuild.x86_64/jmods --add-modules java.se,jdk.charsets,jdk.crypto.ec --output out/jre
   rm -rf java-*.windows.ojdkbuild.x86_64
   wine app/ISCC.exe traccar.iss >/dev/null
   rm -rf out/jre
@@ -143,9 +143,9 @@ package_linux () {
   cp traccar.service out
 
   unzip -q -o jdk-*-linux-$1.zip
-  jlink --module-path jdk-*-linux-$1/jmods --add-modules java.se,jdk.charsets --output out/jre
+  jlink --module-path jdk-*-linux-$1/jmods --add-modules java.se,jdk.charsets,jdk.crypto.ec --output out/jre
   rm -rf jdk-*-linux-$1
-  makeself --quiet --notemp out traccar.run "traccar" ./setup.sh
+  makeself --needroot --quiet --notemp out traccar.run "traccar" ./setup.sh
   rm -rf out/jre
 
   zip -q -j traccar-linux-$2-$VERSION.zip traccar.run README.txt

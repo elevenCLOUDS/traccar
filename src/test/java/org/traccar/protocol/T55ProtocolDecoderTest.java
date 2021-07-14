@@ -2,16 +2,24 @@ package org.traccar.protocol;
 
 import org.junit.Test;
 import org.traccar.ProtocolTest;
+import org.traccar.model.Position;
 
 public class T55ProtocolDecoderTest extends ProtocolTest {
 
     @Test
     public void testDecode() throws Exception {
 
-        T55ProtocolDecoder decoder = new T55ProtocolDecoder(null);
+        var decoder = new T55ProtocolDecoder(null);
+
+        verifyPosition(decoder, text(
+                "QZE,868994033976700,35,28062020,113553,22.13673,114.57263,0,22,A,0"));
 
         verifyNull(decoder, text(
                 "$DEVID,0x0103846677F21422*41"));
+
+        verifyAttribute(decoder, text(
+                "$GPIOP,01000000,00000000,0.00,0.00,0.00,0.00,4.69,4.24*49"),
+                Position.KEY_BATTERY, 4.24);
 
         verifyPosition(decoder, text(
                 "660420156A0066AA$GPRMC,122806.0,A,0119.212178,N,10355.000942,E,0.0,,230119,0.0,E,A*27"));
@@ -113,7 +121,7 @@ public class T55ProtocolDecoderTest extends ProtocolTest {
 
         // Maxon devices can send NMEA before identification
 
-        T55ProtocolDecoder decoder = new T55ProtocolDecoder(null);
+        var decoder = new T55ProtocolDecoder(null);
 
         verifyNull(decoder, text(
                 "$GPRMC,012006,A,4828.10,N,1353.52,E,0.00,0.00,180915,020.3,E*42"));

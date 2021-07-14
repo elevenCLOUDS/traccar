@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 - 2019 Anton Tananaev (anton@traccar.org)
+ * Copyright 2013 - 2021 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import org.traccar.Context;
 import org.traccar.DeviceSession;
 import org.traccar.NetworkMessage;
 import org.traccar.Protocol;
+import org.traccar.config.Keys;
 import org.traccar.helper.BitUtil;
 import org.traccar.helper.Checksum;
 import org.traccar.helper.UnitsConverter;
@@ -43,9 +44,9 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
 
     private static final int IMAGE_PACKET_MAX = 2048;
 
-    private boolean connectionless;
+    private final boolean connectionless;
     private boolean extended;
-    private Map<Long, ByteBuf> photos = new HashMap<>();
+    private final Map<Long, ByteBuf> photos = new HashMap<>();
 
     public void setExtended(boolean extended) {
         this.extended = extended;
@@ -54,7 +55,7 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
     public TeltonikaProtocolDecoder(Protocol protocol, boolean connectionless) {
         super(protocol);
         this.connectionless = connectionless;
-        this.extended = Context.getConfig().getBoolean(getProtocolName() + ".extended");
+        this.extended = Context.getConfig().getBoolean(Keys.PROTOCOL_EXTENDED.withPrefix(getProtocolName()));
     }
 
     private void parseIdentification(Channel channel, SocketAddress remoteAddress, ByteBuf buf) {
@@ -78,6 +79,7 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
     public static final int CODEC_8 = 0x08;
     public static final int CODEC_8_EXT = 0x8E;
     public static final int CODEC_12 = 0x0C;
+    public static final int CODEC_13 = 0x0D;
     public static final int CODEC_16 = 0x10;
 
     private void sendImageRequest(Channel channel, SocketAddress remoteAddress, long id, int offset, int size) {
@@ -100,6 +102,18 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
                     Checksum.CRC16_IBM, response.nioBuffer(8, response.readableBytes() - 10)));
             channel.writeAndFlush(new NetworkMessage(response, remoteAddress));
         }
+    }
+
+    private boolean isPrintable(ByteBuf buf, int length) {
+        boolean printable = true;
+        for (int i = 0; i < length; i++) {
+            byte b = buf.getByte(buf.readerIndex() + i);
+            if (b < 32 && b != '\r' && b != '\n') {
+                printable = false;
+                break;
+            }
+        }
+        return printable;
     }
 
     private void decodeSerial(Channel channel, SocketAddress remoteAddress, Position position, ByteBuf buf) {
@@ -147,17 +161,20 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
             position.set(Position.KEY_TYPE, type);
 
             int length = buf.readInt();
-            boolean readable = true;
-            for (int i = 0; i < length; i++) {
-                byte b = buf.getByte(buf.readerIndex() + i);
-                if (b < 32 && b != '\r' && b != '\n') {
-                    readable = false;
-                    break;
+            if (isPrintable(buf, length)) {
+                String data = buf.readSlice(length).toString(StandardCharsets.US_ASCII).trim();
+                if (data.startsWith("UUUUww") && data.endsWith("SSS")) {
+                    String[] values = data.substring(6, data.length() - 4).split(";");
+                    for (int i = 0; i < 8; i++) {
+                        position.set("axle" + (i + 1), Double.parseDouble(values[i]));
+                    }
+                    position.set("loadTruck", Double.parseDouble(values[8]));
+                    position.set("loadTrailer", Double.parseDouble(values[9]));
+                    position.set("totalTruck", Double.parseDouble(values[10]));
+                    position.set("totalTrailer", Double.parseDouble(values[11]));
+                } else {
+                    position.set(Position.KEY_RESULT, data);
                 }
-            }
-
-            if (readable) {
-                position.set(Position.KEY_RESULT, buf.readSlice(length).toString(StandardCharsets.US_ASCII));
             } else {
                 position.set(Position.KEY_RESULT, ByteBufUtil.hexDump(buf.readSlice(length)));
             }
@@ -188,6 +205,12 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
             case 9:
                 position.set(Position.PREFIX_ADC + 1, readValue(buf, length, false));
                 break;
+            case 10:
+                position.set(Position.PREFIX_ADC + 2, readValue(buf, length, false));
+                break;
+            case 16:
+                position.set(Position.KEY_ODOMETER, readValue(buf, length, false));
+                break;
             case 17:
                 position.set("axisX", readValue(buf, length, true));
                 break;
@@ -204,7 +227,7 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
             case 26:
             case 27:
             case 28:
-                position.set(Position.PREFIX_TEMP + (id - 24), readValue(buf, length, true) * 0.1);
+                position.set(Position.PREFIX_TEMP + (id - 24 + 4), readValue(buf, length, true) * 0.1);
                 break;
             case 66:
                 position.set(Position.KEY_POWER, readValue(buf, length, false) * 0.001);
@@ -229,6 +252,12 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
             case 80:
                 position.set("workMode", readValue(buf, length, false));
                 break;
+            case 90:
+                position.set(Position.KEY_DOOR, readValue(buf, length, false));
+                break;
+            case 115:
+                position.set(Position.KEY_COOLANT_TEMP, readValue(buf, length, true) * 0.1);
+                break;
             case 129:
             case 130:
             case 131:
@@ -251,15 +280,24 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
             case 182:
                 position.set(Position.KEY_HDOP, readValue(buf, length, false) * 0.1);
                 break;
+            case 199:
+                position.set(Position.KEY_ODOMETER_TRIP, readValue(buf, length, false));
+                break;
             case 236:
                 if (readValue(buf, length, false) == 1) {
-                    position.set(Position.KEY_ALARM, Position.ALARM_OVERSPEED);
+                    position.set(Position.KEY_ALARM, Position.ALARM_GENERAL);
                 }
                 break;
-            case 237:
-                position.set(Position.KEY_MOTION, readValue(buf, length, false) == 0);
+            case 239:
+                position.set(Position.KEY_IGNITION, readValue(buf, length, false) == 1);
                 break;
-            case 238:
+            case 240:
+                position.set(Position.KEY_MOTION, readValue(buf, length, false) == 1);
+                break;
+            case 241:
+                position.set(Position.KEY_OPERATOR, readValue(buf, length, false));
+                break;
+            case 253:
                 switch ((int) readValue(buf, length, false)) {
                     case 1:
                         position.set(Position.KEY_ALARM, Position.ALARM_ACCELERATION);
@@ -274,14 +312,10 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
                         break;
                 }
                 break;
-            case 239:
-                position.set(Position.KEY_IGNITION, readValue(buf, length, false) == 1);
-                break;
-            case 240:
-                position.set(Position.KEY_MOTION, readValue(buf, length, false) == 1);
-                break;
-            case 241:
-                position.set(Position.KEY_OPERATOR, readValue(buf, length, false));
+            case 389:
+                if (BitUtil.between(readValue(buf, length, false), 4, 8) == 1) {
+                    position.set(Position.KEY_ALARM, Position.ALARM_SOS);
+                }
                 break;
             default:
                 position.set(Position.PREFIX_IO + id, readValue(buf, length, false));
@@ -508,7 +542,34 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
                 int id = buf.readUnsignedShort();
                 int length = buf.readUnsignedShort();
                 if (id == 256) {
-                    position.set(Position.KEY_VIN, buf.readSlice(length).toString(StandardCharsets.US_ASCII));
+                    position.set(Position.KEY_VIN,
+                            buf.readSlice(length).toString(StandardCharsets.US_ASCII));
+                } else if (id == 281) {
+                    position.set(Position.KEY_DTCS,
+                            buf.readSlice(length).toString(StandardCharsets.US_ASCII).replace(',', ' '));
+                } else if (id == 385) {
+                    ByteBuf data = buf.readSlice(length);
+                    data.readUnsignedByte(); // data part
+                    int index = 1;
+                    while (data.isReadable()) {
+                        int flags = data.readUnsignedByte();
+                        if (BitUtil.from(flags, 4) > 0) {
+                            position.set("beacon" + index + "Uuid", ByteBufUtil.hexDump(data.readSlice(16)));
+                            position.set("beacon" + index + "Major", data.readUnsignedShort());
+                            position.set("beacon" + index + "Minor", data.readUnsignedShort());
+                        } else {
+                            position.set("beacon" + index + "Namespace", ByteBufUtil.hexDump(data.readSlice(10)));
+                            position.set("beacon" + index + "Instance", ByteBufUtil.hexDump(data.readSlice(6)));
+                        }
+                        position.set("beacon" + index + "Rssi", (int) data.readByte());
+                        if (BitUtil.check(flags, 1)) {
+                            position.set("beacon" + index + "Battery", data.readUnsignedShort() * 0.01);
+                        }
+                        if (BitUtil.check(flags, 2)) {
+                            position.set("beacon" + index + "Temp", data.readUnsignedShort());
+                        }
+                        index += 1;
+                    }
                 } else {
                     position.set(Position.PREFIX_IO + id, ByteBufUtil.hexDump(buf.readSlice(length)));
                 }
@@ -542,7 +603,18 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
             position.setDeviceId(deviceSession.getDeviceId());
             position.setValid(true);
 
-            if (codec == CODEC_12) {
+            if (codec == CODEC_13) {
+                buf.readUnsignedByte(); // type
+                int length = buf.readInt() - 4;
+                getLastLocation(position, new Date(buf.readUnsignedInt() * 1000));
+                if (isPrintable(buf, length)) {
+                    position.set(Position.KEY_RESULT,
+                            buf.readCharSequence(length, StandardCharsets.US_ASCII).toString().trim());
+                } else {
+                    position.set(Position.KEY_RESULT,
+                            ByteBufUtil.hexDump(buf.readSlice(length)));
+                }
+            } else if (codec == CODEC_12) {
                 decodeSerial(channel, remoteAddress, position, buf);
             } else {
                 decodeLocation(position, buf, codec);
@@ -553,20 +625,18 @@ public class TeltonikaProtocolDecoder extends BaseProtocolDecoder {
             }
         }
 
-        if (channel != null) {
+        if (channel != null && codec != CODEC_12 && codec != CODEC_13) {
+            ByteBuf response = Unpooled.buffer();
             if (connectionless) {
-                ByteBuf response = Unpooled.buffer();
                 response.writeShort(5);
                 response.writeShort(0);
                 response.writeByte(0x01);
                 response.writeByte(locationPacketId);
                 response.writeByte(count);
-                channel.writeAndFlush(new NetworkMessage(response, remoteAddress));
             } else {
-                ByteBuf response = Unpooled.buffer();
                 response.writeInt(count);
-                channel.writeAndFlush(new NetworkMessage(response, remoteAddress));
             }
+            channel.writeAndFlush(new NetworkMessage(response, remoteAddress));
         }
 
         return positions.isEmpty() ? null : positions;

@@ -21,7 +21,7 @@ import java.util.TimeZone;
 
 public class DateBuilder {
 
-    private Calendar calendar;
+    private final Calendar calendar;
 
     public DateBuilder() {
         this(TimeZone.getTimeZone("UTC"));
@@ -69,7 +69,9 @@ public class DateBuilder {
 
     public DateBuilder setCurrentDate() {
         Calendar now = Calendar.getInstance(calendar.getTimeZone());
-        return setYear(now.get(Calendar.YEAR)).setMonth(now.get(Calendar.MONTH)).setDay(now.get(Calendar.DAY_OF_MONTH));
+        return setYear(now.get(Calendar.YEAR))
+                .setMonth(now.get(Calendar.MONTH) + 1)
+                .setDay(now.get(Calendar.DAY_OF_MONTH));
     }
 
     public DateBuilder setHour(int hour) {

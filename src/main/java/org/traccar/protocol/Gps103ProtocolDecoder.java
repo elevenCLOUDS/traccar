@@ -1,5 +1,5 @@
 /*
- * Copyright 2012 - 2018 Anton Tananaev (anton@traccar.org)
+ * Copyright 2012 - 2021 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,7 +63,7 @@ public class Gps103ProtocolDecoder extends BaseProtocolDecoder {
             .or()
             .text("F,")
             .groupBegin()
-            .number("(dd)(dd)(dd).d+")           // time utc (hhmmss)
+            .number("(dd)(dd)(dd)(?:.d+)?")      // time utc (hhmmss)
             .or()
             .number("(?:d{1,5}.d+)?")
             .groupEnd()
@@ -77,7 +77,7 @@ public class Gps103ProtocolDecoder extends BaseProtocolDecoder {
             .expression("([EW])?,").optional()
             .number("(d+.?d*)?").optional()      // speed
             .number(",(d+.?d*)?").optional()     // course
-            .number(",(d+.?d*)?").optional()     // altitude
+            .number(",(-?d+.?d*)?").optional()   // altitude
             .number(",([01])?").optional()       // ignition
             .number(",([01])?").optional()       // door
             .groupBegin()
@@ -408,7 +408,7 @@ public class Gps103ProtocolDecoder extends BaseProtocolDecoder {
             }
         }
 
-        if (sentence.substring(21, 21 + 2).equals("vr")) {
+        if (sentence.startsWith("vr", 21)) {
             return decodePhoto(channel, remoteAddress, sentence);
         } else if (sentence.substring(21, 21 + 3).contains("OBD")) {
             return decodeObd(channel, remoteAddress, sentence);

@@ -9,7 +9,24 @@ public class Tk103ProtocolDecoderTest extends ProtocolTest {
     @Test
     public void testDecode() throws Exception {
 
-        Tk103ProtocolDecoder decoder = new Tk103ProtocolDecoder(null);
+        var decoder = new Tk103ProtocolDecoder(null);
+
+        verifyPosition(decoder, text(
+                "(868822040452227,DW3B,150421,A,4154.51607N,45.78950E,0.050,103142,0.000,595.200,7,0)"));
+
+        verifyPosition(decoder, text(
+                "(086375304593BR00210119A2220.0160N11335.4073E0000014000309.84001000293L0000015FP23BS27F)"));
+
+        verifyAttribute(decoder, text(
+                "(027023361470BV005J6RW2H53HL066029)"),
+                Position.KEY_VIN, "5J6RW2H53HL066029");
+
+        verifyAttribute(decoder, text(
+                "(044027395704BQ81,ALARM,1,164,151101A2238.5237N11349.4571E0.7031241010.0000,00000000)"),
+                Position.KEY_ALARM, Position.ALARM_OVERSPEED);
+
+        verifyPosition(decoder, text(
+                "(027023361470BR00200617A4000.5775N 8415.4076W 46.0173725 87.3101000000L00000000)"));
 
         verifyPosition(decoder, text(
                 "(BALLESTEROS3BR00190408A4113.5700N00140.3100E000.0162431000.0001000000L00000000)"));

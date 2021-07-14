@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 - 2017 Anton Tananaev (anton@traccar.org)
+ * Copyright 2016 - 2020 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,15 @@ import java.util.Date;
 public class Event extends Message {
 
     public Event(String type, Position position) {
+        /** Additional for gpstrack.ng */
         this(type, position.getDeviceId());
+
+        setType(type);
         setPositionId(position.getId());
+        setDeviceId(position.getDeviceId());
+        eventTime = position.getDeviceTime();
+
+        /** Additional for gpstrack.ng */
         set("speed", position.getSpeed());
         set("address", position.getAddress());
         set("course", position.getCourse());
@@ -31,7 +38,7 @@ public class Event extends Message {
     public Event(String type, long deviceId) {
         setType(type);
         setDeviceId(deviceId);
-        this.serverTime = new Date();
+        eventTime = new Date();
     }
 
     public Event() {
@@ -44,6 +51,7 @@ public class Event extends Message {
     public static final String TYPE_DEVICE_ONLINE = "deviceOnline";
     public static final String TYPE_DEVICE_UNKNOWN = "deviceUnknown";
     public static final String TYPE_DEVICE_OFFLINE = "deviceOffline";
+    public static final String TYPE_DEVICE_INACTIVE = "deviceInactive";
 
     public static final String TYPE_DEVICE_MOVING = "deviceMoving";
     public static final String TYPE_DEVICE_STOPPED = "deviceStopped";
@@ -65,14 +73,14 @@ public class Event extends Message {
 
     public static final String TYPE_DRIVER_CHANGED = "driverChanged";
 
-    private Date serverTime;
+    private Date eventTime;
 
-    public Date getServerTime() {
-        return serverTime;
+    public Date getEventTime() {
+        return eventTime;
     }
 
-    public void setServerTime(Date serverTime) {
-        this.serverTime = serverTime;
+    public void setEventTime(Date eventTime) {
+        this.eventTime = eventTime;
     }
 
     private long positionId;

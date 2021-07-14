@@ -43,6 +43,9 @@ import org.traccar.geocoder.MapQuestGeocoder;
 import org.traccar.geocoder.MapmyIndiaGeocoder;
 import org.traccar.geocoder.NominatimGeocoder;
 import org.traccar.geocoder.OpenCageGeocoder;
+import org.traccar.geocoder.PositionStackGeocoder;
+import org.traccar.geocoder.TomTomGeocoder;
+import org.traccar.geocoder.MapboxGeocoder;
 import org.traccar.geolocation.GeolocationProvider;
 import org.traccar.geolocation.GoogleGeolocationProvider;
 import org.traccar.geolocation.MozillaGeolocationProvider;
@@ -59,6 +62,7 @@ import org.traccar.handler.GeolocationHandler;
 import org.traccar.handler.HemisphereHandler;
 import org.traccar.handler.MotionHandler;
 import org.traccar.handler.RemoteAddressHandler;
+import org.traccar.handler.SpeedLimitHandler;
 import org.traccar.handler.TimeHandler;
 import org.traccar.handler.events.AlertEventHandler;
 import org.traccar.handler.events.CommandResultEventHandler;
@@ -73,6 +77,9 @@ import org.traccar.reports.model.TripsConfig;
 
 import javax.annotation.Nullable;
 import javax.ws.rs.client.Client;
+import io.netty.util.Timer;
+import org.traccar.speedlimit.OverpassSpeedLimitProvider;
+import org.traccar.speedlimit.SpeedLimitProvider;
 
 public class MainModule extends AbstractModule {
 
@@ -133,8 +140,9 @@ public class MainModule extends AbstractModule {
 
     @Singleton
     @Provides
-    public static StatisticsManager provideStatisticsManager(Config config, DataManager dataManager, Client client) {
-        return new StatisticsManager(config, dataManager, client);
+    public static StatisticsManager provideStatisticsManager(
+            Config config, DataManager dataManager, Client client, ObjectMapper objectMapper) {
+        return new StatisticsManager(config, dataManager, client, objectMapper);
     }
 
     @Singleton
@@ -170,9 +178,15 @@ public class MainModule extends AbstractModule {
                 case "ban":
                     return new BanGeocoder(cacheSize, addressFormat);
                 case "here":
-                    return new HereGeocoder(id, key, language, cacheSize, addressFormat);
+                    return new HereGeocoder(url, id, key, language, cacheSize, addressFormat);
                 case "mapmyindia":
                     return new MapmyIndiaGeocoder(url, key, cacheSize, addressFormat);
+                case "tomtom":
+                    return new TomTomGeocoder(url, key, cacheSize, addressFormat);
+                case "positionstack":
+                    return new PositionStackGeocoder(key, cacheSize, addressFormat);
+                case "mapbox":
+                    return new MapboxGeocoder(key, cacheSize, addressFormat);
                 default:
                     return new GoogleGeocoder(key, language, cacheSize, addressFormat);
             }
@@ -191,11 +205,26 @@ public class MainModule extends AbstractModule {
                 case "google":
                     return new GoogleGeolocationProvider(key);
                 case "opencellid":
-                    return new OpenCellIdGeolocationProvider(key);
+                    return new OpenCellIdGeolocationProvider(url, key);
                 case "unwired":
                     return new UnwiredGeolocationProvider(url, key);
                 default:
                     return new MozillaGeolocationProvider(key);
+            }
+        }
+        return null;
+    }
+
+    @Singleton
+    @Provides
+    public static SpeedLimitProvider provideSpeedLimitProvider(Config config) {
+        if (config.getBoolean(Keys.SPEED_LIMIT_ENABLE)) {
+            String type = config.getString(Keys.SPEED_LIMIT_TYPE, "overpass");
+            String url = config.getString(Keys.SPEED_LIMIT_URL);
+            switch (type) {
+                case "overpass":
+                default:
+                    return new OverpassSpeedLimitProvider(url);
             }
         }
         return null;
@@ -238,7 +267,7 @@ public class MainModule extends AbstractModule {
     @Provides
     public static WebDataHandler provideWebDataHandler(
             Config config, IdentityManager identityManager, ObjectMapper objectMapper, Client client) {
-        if (config.getBoolean(Keys.FORWARD_ENABLE)) {
+        if (config.hasKey(Keys.FORWARD_URL)) {
             return new WebDataHandler(config, identityManager, objectMapper, client);
         }
         return null;
@@ -257,10 +286,18 @@ public class MainModule extends AbstractModule {
     @Singleton
     @Provides
     public static GeocoderHandler provideGeocoderHandler(
-            Config config, @Nullable Geocoder geocoder, IdentityManager identityManager,
-            StatisticsManager statisticsManager) {
+            Config config, @Nullable Geocoder geocoder, IdentityManager identityManager) {
         if (geocoder != null) {
-            return new GeocoderHandler(config, geocoder, identityManager, statisticsManager);
+            return new GeocoderHandler(config, geocoder, identityManager);
+        }
+        return null;
+    }
+
+    @Singleton
+    @Provides
+    public static SpeedLimitHandler provideSpeedLimitHandler(@Nullable SpeedLimitProvider speedLimitProvider) {
+        if (speedLimitProvider != null) {
+            return new SpeedLimitHandler(speedLimitProvider);
         }
         return null;
     }
@@ -373,6 +410,12 @@ public class MainModule extends AbstractModule {
     @Provides
     public static DriverEventHandler provideDriverEventHandler(IdentityManager identityManager) {
         return new DriverEventHandler(identityManager);
+    }
+
+    @Singleton
+    @Provides
+    public static Timer provideTimer() {
+        return GlobalTimer.getTimer();
     }
 
     @Override
